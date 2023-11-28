@@ -16,7 +16,7 @@ func makeHandler(f apiHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request){
 		// handle bad requests
 		if err := f(w, r); err != nil {
-			writeJSON(w, http.StatusBadRequest, err.Error())
+			writeJSON(w, http.StatusBadRequest, err)
 		}
 	}
 }
@@ -36,6 +36,7 @@ func (s *Server) initRouter() {
 	userRouter.HandleFunc("/{id}", makeHandler(s.handleRemoveUserById)).Methods("DELETE")
 	userRouter.HandleFunc("/{id}", makeHandler(s.handleUpdateUserById)).Methods("PUT")
 	userRouter.HandleFunc("", makeHandler(s.handleGetAllUsers)).Methods("GET")
+	userRouter.HandleFunc("", makeHandler(s.handleUpdateMultipleUsers)).Methods("PUT")
 
 	http.Handle("/",s.router)
 }
@@ -98,6 +99,38 @@ func (s *Server) handleUpdateUserById(w http.ResponseWriter, r *http.Request) er
 	retUser := s.store.Update(id, &user)
 
 	writeJSON(w,http.StatusOK, retUser)
+
+	return nil
+}
+
+func (s *Server) handleUpdateMultipleUsers(w http.ResponseWriter, r *http.Request) error {
+	if headerContentType := r.Header.Get("Content-Type"); headerContentType != "application/json" {
+		return models.NewRequestError("Content type is not json!")
+	}
+
+	var users []*models.User
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&users); err != nil{
+		var unmarshallErr *json.UnmarshalTypeError
+
+		if errors.As(err, &unmarshallErr) {
+			return models.NewRequestError("Bad Request: Wrong type provided")
+		} else {
+			return models.NewRequestError("Bad Request: " + err.Error())
+		}
+	}
+
+	var result []*models.User
+
+	for _, usr := range users {
+		result = append(result, s.store.Update(usr.Id, usr))
+	}
+
+
+	writeJSON(w,http.StatusOK, result)
 
 	return nil
 }
