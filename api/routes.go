@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"simple-server/models"
 	"strconv"
@@ -33,6 +34,7 @@ func (s *Server) initRouter() {
 	userRouter := s.router.PathPrefix("/users").Subrouter()
 	userRouter.HandleFunc("/{id}", makeHandler(s.handleGetUserByID)).Methods("GET")
 	userRouter.HandleFunc("/{id}", makeHandler(s.handleRemoveUserById)).Methods("DELETE")
+	userRouter.HandleFunc("/{id}", makeHandler(s.handleUpdateUserById)).Methods("PUT")
 	userRouter.HandleFunc("", makeHandler(s.handleGetAllUsers)).Methods("GET")
 
 	http.Handle("/",s.router)
@@ -65,6 +67,37 @@ func (s *Server) handleRemoveUserById(w http.ResponseWriter, r *http.Request) er
 
 	user := s.store.Remove(id)
 	writeJSON(w,http.StatusOK, user)
+
+	return nil
+}
+
+func (s *Server) handleUpdateUserById(w http.ResponseWriter, r *http.Request) error {
+	if headerContentType := r.Header.Get("Content-Type"); headerContentType != "application/json" {
+		return models.NewRequestError("Content type is not json!")
+	}
+
+	id, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil{
+		return models.NewRequestError("id type needs to be integer")
+	}
+	var user models.User
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&user); err != nil{
+		var unmarshallErr *json.UnmarshalTypeError
+
+		if errors.As(err, &unmarshallErr) {
+			return models.NewRequestError("Bad Request: Wrong type provided")
+		} else {
+			return models.NewRequestError("Bad Request: " + err.Error())
+		}
+	}
+
+	retUser := s.store.Update(id, &user)
+
+	writeJSON(w,http.StatusOK, retUser)
 
 	return nil
 }
